@@ -32,6 +32,15 @@ export interface Challenge {
   expectedOutput: string
 }
 
+export interface TestRunProgressInfo {
+  currentStep: 'idle' | 'querying' | 'evaluating' | 'waiting'
+  currentModel?: string
+  currentChallenge?: string
+  currentTestNumber?: number
+  totalTests?: number
+  estimatedTimeRemaining?: number
+}
+
 export interface TestRun {
   id: string
   name: string
@@ -46,6 +55,7 @@ export interface TestRun {
   delayBetweenCalls?: number // milliseconds to wait between API calls (default: 0)
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
+  progressInfo?: TestRunProgressInfo
   results: TestResult[]
   createdAt: string
   completedAt?: string

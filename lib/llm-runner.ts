@@ -8,32 +8,32 @@ export async function runTest(
   const startTime = Date.now()
   
   try {
-    console.log(`[LLM Runner] Testing model: ${model.name} (${model.provider})`)
-    console.log(`[LLM Runner] Challenge input: ${challenge.input.slice(0, 100)}...`)
+    // console.log(`[LLM Runner] Testing model: ${model.name} (${model.provider})`)
+    // console.log(`[LLM Runner] Challenge input: ${challenge.input.slice(0, 100)}...`)
 
     let response: string
     
     // Use retry logic for API calls with rate limiting
     response = await retryWithDelay(async () => {
       if (model.provider === 'openai') {
-        console.log('[LLM Runner] Calling OpenAI API...')
+        // console.log('[LLM Runner] Calling OpenAI API...')
         return await callOpenAI(model, challenge.input, systemPrompt)
       } else if (model.provider === 'anthropic') {
-        console.log('[LLM Runner] Calling Anthropic API...')
+        // console.log('[LLM Runner] Calling Anthropic API...')
         return await callAnthropic(model, challenge.input, systemPrompt)
       } else if (model.provider === 'google') {
-        console.log('[LLM Runner] Calling Google API...')
+        // console.log('[LLM Runner] Calling Google API...')
         return await callGoogle(model, challenge.input, systemPrompt)
       } else if (model.provider === 'grok') {
-        console.log('[LLM Runner] Calling Grok API...')
+        // console.log('[LLM Runner] Calling Grok API...')
         return await callGrok(model, challenge.input, systemPrompt)
       } else {
-        console.log('[LLM Runner] Calling Custom API...')
+        // console.log('[LLM Runner] Calling Custom API...')
         return await callCustom(model, challenge.input, systemPrompt)
       }
     })
     
-    console.log(`[LLM Runner] Response received: ${response.slice(0, 200)}...`)
+    // console.log(`[LLM Runner] Response received: ${response.slice(0, 200)}...`)
 
     const responseTime = Date.now() - startTime
     // Note: isMatch will be determined later by moderator score if moderator is used
@@ -192,7 +192,7 @@ async function callOpenAI(model: LLMModel, input: string, systemPrompt?: string)
       messages,
     }
 
-    console.log('[OpenAI] Request body:', JSON.stringify(requestBody, null, 2))
+    // console.log('[OpenAI] Request body:', JSON.stringify(requestBody, null, 2))
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -204,7 +204,7 @@ async function callOpenAI(model: LLMModel, input: string, systemPrompt?: string)
       signal: controller.signal,
     })
 
-    console.log('[OpenAI] Response status:', response.status, response.statusText)
+    // console.log('[OpenAI] Response status:', response.status, response.statusText)
 
     clearTimeout(timeoutId)
 
@@ -216,16 +216,16 @@ async function callOpenAI(model: LLMModel, input: string, systemPrompt?: string)
     }
 
     const data = await response.json()
-    console.log('[OpenAI] Full response data:', JSON.stringify(data, null, 2))
-    console.log('[OpenAI] Response data structure:', {
-      hasChoices: !!data.choices,
-      choicesLength: data.choices?.length,
-      hasMessage: !!data.choices?.[0]?.message,
-      hasContent: !!data.choices?.[0]?.message?.content,
-      messageContent: data.choices?.[0]?.message?.content,
-      refusal: data.choices?.[0]?.message?.refusal,
-      finishReason: data.choices?.[0]?.finish_reason
-    })
+    // console.log('[OpenAI] Full response data:', JSON.stringify(data, null, 2))
+    // console.log('[OpenAI] Response data structure:', {
+    //   hasChoices: !!data.choices,
+    //   choicesLength: data.choices?.length,
+    //   hasMessage: !!data.choices?.[0]?.message,
+    //   hasContent: !!data.choices?.[0]?.message?.content,
+    //   messageContent: data.choices?.[0]?.message?.content,
+    //   refusal: data.choices?.[0]?.message?.refusal,
+    //   finishReason: data.choices?.[0]?.finish_reason
+    // })
     
     // Handle refusal or empty content
     const messageContent = data.choices?.[0]?.message?.content
@@ -299,7 +299,7 @@ async function callGrok(model: LLMModel, input: string, systemPrompt?: string): 
       messages,
     }
 
-    console.log('[Grok] Request body:', JSON.stringify(requestBody, null, 2))
+    // console.log('[Grok] Request body:', JSON.stringify(requestBody, null, 2))
 
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
@@ -311,7 +311,7 @@ async function callGrok(model: LLMModel, input: string, systemPrompt?: string): 
       signal: controller.signal,
     })
 
-    console.log('[Grok] Response status:', response.status, response.statusText)
+    // console.log('[Grok] Response status:', response.status, response.statusText)
 
     clearTimeout(timeoutId)
 
@@ -323,13 +323,13 @@ async function callGrok(model: LLMModel, input: string, systemPrompt?: string): 
     }
 
     const data = await response.json()
-    console.log('[Grok] Response data structure:', {
-      hasChoices: !!data.choices,
-      choicesLength: data.choices?.length,
-      hasMessage: !!data.choices?.[0]?.message,
-      hasContent: !!data.choices?.[0]?.message?.content,
-      contentPreview: data.choices?.[0]?.message?.content?.slice(0, 100)
-    })
+    // console.log('[Grok] Response data structure:', {
+    //   hasChoices: !!data.choices,
+    //   choicesLength: data.choices?.length,
+    //   hasMessage: !!data.choices?.[0]?.message,
+    //   hasContent: !!data.choices?.[0]?.message?.content,
+    //   contentPreview: data.choices?.[0]?.message?.content?.slice(0, 100)
+    // })
     return data.choices[0].message.content
   } catch (error) {
     clearTimeout(timeoutId)
@@ -392,7 +392,7 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
     stream: false,
   }
 
-  console.log('[Custom API] Request body:', JSON.stringify(requestBody, null, 2))
+  // console.log('[Custom API] Request body:', JSON.stringify(requestBody, null, 2))
 
   // Create AbortController for timeout
   const controller = new AbortController()
@@ -411,7 +411,7 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
 
     clearTimeout(timeoutId)
 
-    console.log('[Custom API] Response status:', response.status, response.statusText)
+    // console.log('[Custom API] Response status:', response.status, response.statusText)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -429,16 +429,16 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
     }
 
     const responseText = await response.text()
-    console.log('[Custom API] Response text (first 500 chars):', responseText.slice(0, 500))
+    // console.log('[Custom API] Response text (first 500 chars):', responseText.slice(0, 500))
     
     const data = JSON.parse(responseText)
-    console.log('[Custom API] Parsed data structure:', {
-      hasChoices: !!data.choices,
-      choicesLength: data.choices?.length,
-      hasMessage: !!data.choices?.[0]?.message,
-      hasContent: !!data.choices?.[0]?.message?.content,
-      contentLength: data.choices?.[0]?.message?.content?.length
-    })
+    // console.log('[Custom API] Parsed data structure:', {
+    //   hasChoices: !!data.choices,
+    //   choicesLength: data.choices?.length,
+    //   hasMessage: !!data.choices?.[0]?.message,
+    //   hasContent: !!data.choices?.[0]?.message?.content,
+    //   contentLength: data.choices?.[0]?.message?.content?.length
+    // })
     
     const content = data.choices?.[0]?.message?.content || data.response || ''
     
@@ -447,7 +447,7 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
       throw new Error('No content in API response')
     }
     
-    console.log('[Custom API] Successfully extracted content, length:', content.length)
+    // console.log('[Custom API] Successfully extracted content, length:', content.length)
     return content
   } catch (error) {
     clearTimeout(timeoutId)

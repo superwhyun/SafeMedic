@@ -11,8 +11,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Slider } from '@/components/ui/slider'
-import { Play, Trash2, RotateCw } from 'lucide-react'
-import { TestRun, TestResult, LLMModel, ChallengeSet, ChallengeSetSelection } from '@/lib/types'
+import { Play, Trash2, RotateCw, Download, Loader2 } from 'lucide-react'
+import { TestRun, TestResult, LLMModel, ChallengeSet, ChallengeSetSelection, ModelStats, TestRunProgressInfo } from '@/lib/types'
 import { getTestRuns, saveTestRun, deleteTestRun, getModels, getChallengeSets } from '@/lib/storage'
 import { runTest, evaluateWithModerator } from '@/lib/llm-runner'
 import { useToast } from '@/hooks/use-toast'
@@ -27,6 +27,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 export default function TestRunsPage() {
   const [testRuns, setTestRuns] = useState<TestRun[]>([])
@@ -52,7 +60,31 @@ export default function TestRunsPage() {
 
   useEffect(() => {
     loadData()
+    
+    // Check if there's a selected test in URL
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const selectedId = params.get('selected')
+      if (selectedId) {
+        const run = getTestRuns().find(r => r.id === selectedId)
+        if (run) {
+          setSelectedTestRun(run)
+          setIsCreatingNew(false)
+        }
+      }
+    }
   }, [])
+
+  // Auto-refresh when a test is running
+  useEffect(() => {
+    if (!runningTest) return
+
+    const interval = setInterval(() => {
+      loadData()
+    }, 500) // Refresh every 500ms when a test is running
+
+    return () => clearInterval(interval)
+  }, [runningTest, selectedTestRun?.id])
 
   const loadData = () => {
     const runs = getTestRuns().sort((a, b) => 
@@ -61,6 +93,14 @@ export default function TestRunsPage() {
     setTestRuns(runs)
     setModels(getModels())
     setChallengeSets(getChallengeSets())
+    
+    // Update selectedTestRun if it's currently selected
+    if (selectedTestRun) {
+      const updatedRun = runs.find(r => r.id === selectedTestRun.id)
+      if (updatedRun) {
+        setSelectedTestRun(updatedRun)
+      }
+    }
   }
 
   const executeTestRun = async (testRun: TestRun) => {
@@ -115,6 +155,7 @@ export default function TestRunsPage() {
 
     if (allChallenges.length === 0) {
       testRun.status = 'failed'
+      testRun.progressInfo = undefined
       saveTestRun(testRun)
       setRunningTest(null)
       toast({
@@ -128,10 +169,17 @@ export default function TestRunsPage() {
     const results: TestResult[] = []
     const totalTests = testModels.length * allChallenges.length
     let completed = 0
+    const startTime = Date.now()
 
     const moderatorModel = testRun.moderatorModelId 
       ? getModels().find(m => m.id === testRun.moderatorModelId)
       : undefined
+
+    const updateProgress = (info: TestRunProgressInfo) => {
+      testRun.progressInfo = info
+      saveTestRun(testRun)
+      loadData()
+    }
 
     try {
       for (const model of testModels) {
@@ -140,11 +188,34 @@ export default function TestRunsPage() {
         for (const { challenge } of allChallenges) {
           // console.log(`[Test Run] Running test ${completed + 1}/${totalTests}`)
           
+          // Calculate estimated time remaining
+          const elapsed = Date.now() - startTime
+          const avgTimePerTest = completed > 0 ? elapsed / completed : 0
+          const estimatedTimeRemaining = Math.round((totalTests - completed) * avgTimePerTest / 1000)
+          
           // Apply delay between API calls if specified
           if (testRun.delayBetweenCalls && testRun.delayBetweenCalls > 0 && completed > 0) {
+            updateProgress({
+              currentStep: 'waiting',
+              currentModel: model.name,
+              currentChallenge: challenge.input.slice(0, 100),
+              currentTestNumber: completed + 1,
+              totalTests,
+              estimatedTimeRemaining,
+            })
             // console.log(`[Test Run] Waiting ${testRun.delayBetweenCalls}ms before next call...`)
             await new Promise(resolve => setTimeout(resolve, testRun.delayBetweenCalls))
           }
+          
+          // Update progress: querying model
+          updateProgress({
+            currentStep: 'querying',
+            currentModel: model.name,
+            currentChallenge: challenge.input.slice(0, 100),
+            currentTestNumber: completed + 1,
+            totalTests,
+            estimatedTimeRemaining,
+          })
           
           const result = await runTest(model, challenge, testRun.systemPrompt)
           // console.log(`[Test Run] Test result:`, {
@@ -158,6 +229,16 @@ export default function TestRunsPage() {
           
           if (moderatorModel && !result.error && result.actualOutput) {
             try {
+              // Update progress: evaluating with moderator
+              updateProgress({
+                currentStep: 'evaluating',
+                currentModel: model.name,
+                currentChallenge: challenge.input.slice(0, 100),
+                currentTestNumber: completed + 1,
+                totalTests,
+                estimatedTimeRemaining,
+              })
+              
               const evaluation = await evaluateWithModerator(
                 moderatorModel,
                 challenge.input,
@@ -202,6 +283,7 @@ export default function TestRunsPage() {
 
       testRun.status = 'completed'
       testRun.completedAt = new Date().toISOString()
+      testRun.progressInfo = undefined
       saveTestRun(testRun)
       loadData()
 
@@ -211,10 +293,13 @@ export default function TestRunsPage() {
         description: `Completed ${totalTests} tests across ${testModels.length} models`,
       })
 
-      router.push(`/results/${testRun.id}`)
+      // Stay on the test runs page and select the completed test
+      setSelectedTestRun(testRun)
+      setIsCreatingNew(false)
     } catch (error) {
       // console.error('[Test Run] Test execution failed:', error)
       testRun.status = 'failed'
+      testRun.progressInfo = undefined
       saveTestRun(testRun)
       loadData()
       toast({
@@ -372,12 +457,16 @@ export default function TestRunsPage() {
   const handleSelectTestRun = (testRun: TestRun) => {
     setSelectedTestRun(testRun)
     setIsCreatingNew(false)
+    // Update URL to reflect selection
+    router.push(`/test-runs?selected=${testRun.id}`, { scroll: false })
   }
 
   const handleNewTestRun = () => {
     setIsCreatingNew(true)
     setSelectedTestRun(null)
     resetForm()
+    // Clear URL parameter
+    router.push('/test-runs', { scroll: false })
   }
 
   const handleDelete = () => {
@@ -414,6 +503,103 @@ export default function TestRunsPage() {
     }
 
     executeTestRun(newTestRun)
+  }
+
+  const calculateModelStats = (run: TestRun): ModelStats[] => {
+    const statsMap = new Map<string, ModelStats>()
+    const threshold = run.passThreshold ?? 70
+
+    run.results.forEach(result => {
+      if (!statsMap.has(result.modelId)) {
+        statsMap.set(result.modelId, {
+          modelId: result.modelId,
+          modelName: result.modelName,
+          totalTests: 0,
+          passed: 0,
+          failed: 0,
+          errors: 0,
+          accuracy: 0,
+          avgResponseTime: 0,
+        })
+      }
+
+      const stats = statsMap.get(result.modelId)!
+      stats.totalTests++
+      
+      if (result.error) {
+        // Has error (API timeout, parsing error, etc.)
+        stats.errors++
+      } else if (result.moderatorScore !== undefined) {
+        // Has moderator score - use threshold
+        if (result.moderatorScore >= threshold) {
+          stats.passed++
+        } else {
+          stats.failed++
+        }
+      } else {
+        // No moderator score - fallback to isMatch
+        if (result.isMatch) {
+          stats.passed++
+        } else {
+          stats.failed++
+        }
+      }
+    })
+
+    const statsArray = Array.from(statsMap.values())
+    statsArray.forEach(stats => {
+      stats.accuracy = (stats.passed / stats.totalTests) * 100
+      const modelResults = run.results.filter(r => r.modelId === stats.modelId)
+      stats.avgResponseTime = modelResults.reduce((sum, r) => sum + r.responseTime, 0) / modelResults.length
+    })
+
+    return statsArray.sort((a, b) => b.accuracy - a.accuracy)
+  }
+
+  const downloadJSON = (testRun: TestRun) => {
+    const dataStr = JSON.stringify(testRun, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${testRun.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadCSV = (testRun: TestRun) => {
+    const headers = [
+      'Model Name',
+      'Challenge Input',
+      'Expected Output',
+      'Actual Output',
+      'Is Match',
+      'Response Time (ms)',
+      'Moderator Score',
+      'Moderator Feedback',
+      'Error'
+    ]
+    
+    const rows = testRun.results.map(result => [
+      result.modelName,
+      `"${result.challengeInput.replace(/"/g, '""')}"`,
+      `"${result.expectedOutput.replace(/"/g, '""')}"`,
+      `"${(result.actualOutput || '').replace(/"/g, '""')}"`,
+      result.isMatch ? 'Yes' : 'No',
+      result.responseTime,
+      result.moderatorScore ?? '',
+      `"${(result.moderatorFeedback || '').replace(/"/g, '""')}"`,
+      `"${(result.error || '').replace(/"/g, '""')}"`
+    ])
+    
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
+    const dataBlob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${testRun.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   const getStatusBadge = (status: TestRun['status']) => {
@@ -500,7 +686,16 @@ export default function TestRunsPage() {
                   {testRun.status === 'running' && (
                     <div className="space-y-1">
                       <Progress value={testRun.progress} className="h-1" />
-                      <p className="text-xs text-muted-foreground">{Math.round(testRun.progress)}%</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          {testRun.progressInfo?.currentTestNumber && testRun.progressInfo?.totalTests
+                            ? `${testRun.progressInfo.currentTestNumber}/${testRun.progressInfo.totalTests}`
+                            : `${Math.round(testRun.progress)}%`}
+                        </p>
+                        {testRun.progressInfo?.currentStep && (
+                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                        )}
+                      </div>
                     </div>
                   )}
                   <div className="text-xs text-muted-foreground space-y-0.5">
@@ -752,74 +947,263 @@ export default function TestRunsPage() {
               </form>
             </Card>
           ) : selectedTestRun ? (
-            <Card className="p-6 space-y-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold">{selectedTestRun.name}</h2>
-                  {selectedTestRun.challengeSetSelections && selectedTestRun.challengeSetSelections.length > 0 ? (
-                    <div className="mt-2 space-y-1">
-                      {selectedTestRun.challengeSetSelections.map((selection) => (
-                        <p key={selection.challengeSetId} className="text-sm text-muted-foreground">
-                          {selection.challengeSetName}: {selection.count} challenges
-                        </p>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground mt-1">
-                      {selectedTestRun.challengeSetName}
-                    </p>
-                  )}
-                </div>
-                {getStatusBadge(selectedTestRun.status)}
-              </div>
-
+            <div className="space-y-6">
               {selectedTestRun.status === 'running' && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Progress</span>
-                    <span className="font-medium">{Math.round(selectedTestRun.progress)}%</span>
+                <Card className="p-6 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold">{selectedTestRun.name}</h2>
+                      {selectedTestRun.challengeSetSelections && selectedTestRun.challengeSetSelections.length > 0 ? (
+                        <div className="mt-2 space-y-1">
+                          {selectedTestRun.challengeSetSelections.map((selection) => (
+                            <p key={selection.challengeSetId} className="text-sm text-muted-foreground">
+                              {selection.challengeSetName}: {selection.count} challenges
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground mt-1">
+                          {selectedTestRun.challengeSetName}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(selectedTestRun.status)}
+                    </div>
                   </div>
-                  <Progress value={selectedTestRun.progress} />
-                </div>
+
+                  <div className="space-y-4">
+                    {/* Progress Bar */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium">Overall Progress</span>
+                        <span className="font-medium">{Math.round(selectedTestRun.progress)}%</span>
+                      </div>
+                      <Progress value={selectedTestRun.progress} />
+                    </div>
+
+                    {/* Detailed Progress Info */}
+                    {selectedTestRun.progressInfo && (
+                      <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+                        {/* Test Counter */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Test Progress</span>
+                          <Badge variant="secondary">
+                            {selectedTestRun.progressInfo.currentTestNumber} / {selectedTestRun.progressInfo.totalTests}
+                          </Badge>
+                        </div>
+
+                        {/* Current Step */}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                            <span className="text-sm font-medium">
+                              {selectedTestRun.progressInfo.currentStep === 'querying' && 'Querying Model...'}
+                              {selectedTestRun.progressInfo.currentStep === 'evaluating' && 'Evaluating Response...'}
+                              {selectedTestRun.progressInfo.currentStep === 'waiting' && 'Waiting (Rate Limit Delay)...'}
+                            </span>
+                          </div>
+                          
+                          {/* Current Model */}
+                          {selectedTestRun.progressInfo.currentModel && (
+                            <div className="text-sm space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Model:</span>
+                                <Badge variant="outline">{selectedTestRun.progressInfo.currentModel}</Badge>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Current Challenge */}
+                          {selectedTestRun.progressInfo.currentChallenge && (
+                            <div className="text-sm">
+                              <span className="text-muted-foreground">Challenge:</span>
+                              <p className="mt-1 text-xs bg-background rounded p-2 border">
+                                {selectedTestRun.progressInfo.currentChallenge}
+                                {selectedTestRun.progressInfo.currentChallenge.length >= 100 && '...'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Estimated Time Remaining */}
+                        {selectedTestRun.progressInfo.estimatedTimeRemaining !== undefined && 
+                         selectedTestRun.progressInfo.estimatedTimeRemaining > 0 && (
+                          <div className="flex items-center justify-between pt-2 border-t">
+                            <span className="text-xs text-muted-foreground">Estimated time remaining</span>
+                            <span className="text-xs font-medium">
+                              {Math.floor(selectedTestRun.progressInfo.estimatedTimeRemaining / 60)}m {selectedTestRun.progressInfo.estimatedTimeRemaining % 60}s
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </Card>
               )}
 
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold">Models Tested</h3>
-                <div className="flex flex-wrap gap-2">
-                  {selectedTestRun.modelIds.map((modelId) => {
-                    const model = models.find(m => m.id === modelId)
-                    return model ? (
-                      <Badge key={modelId} variant="secondary">{model.name}</Badge>
-                    ) : null
-                  })}
-                </div>
-              </div>
+              {selectedTestRun.status === 'completed' && selectedTestRun.results.length > 0 && (
+                <>
+                  {/* Summary Cards with integrated info */}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Card className="p-6">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-muted-foreground">Total Tests</p>
+                          {getStatusBadge(selectedTestRun.status)}
+                        </div>
+                        <p className="text-3xl font-bold">{selectedTestRun.results.length}</p>
+                        <div className="pt-2 border-t space-y-1">
+                          <h3 className="text-xs font-semibold text-muted-foreground">Challenge Sets</h3>
+                          {selectedTestRun.challengeSetSelections && selectedTestRun.challengeSetSelections.length > 0 ? (
+                            selectedTestRun.challengeSetSelections.map((selection) => (
+                              <p key={selection.challengeSetId} className="text-xs text-muted-foreground">
+                                {selection.challengeSetName}: {selection.count}
+                              </p>
+                            ))
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {selectedTestRun.challengeSetName}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                    <Card className="p-6">
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">Models Tested</p>
+                        <p className="text-3xl font-bold">{selectedTestRun.modelIds.length}</p>
+                        <div className="pt-2 border-t">
+                          <div className="flex flex-wrap gap-1">
+                            {selectedTestRun.modelIds.map((modelId) => {
+                              const model = models.find(m => m.id === modelId)
+                              return model ? (
+                                <Badge key={modelId} variant="secondary" className="text-xs">{model.name}</Badge>
+                              ) : null
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                    <Card className="p-6">
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">Best Accuracy</p>
+                        <p className="text-3xl font-bold">
+                          {(() => {
+                            const stats = calculateModelStats(selectedTestRun)
+                            return stats.length > 0 ? `${stats[0].accuracy.toFixed(1)}%` : 'N/A'
+                          })()}
+                        </p>
+                        {selectedTestRun.moderatorModelId && (
+                          <div className="pt-2 border-t space-y-1">
+                            <h3 className="text-xs font-semibold text-muted-foreground">Moderator</h3>
+                            <Badge variant="outline" className="text-xs">
+                              {models.find(m => m.id === selectedTestRun.moderatorModelId)?.name || 'Unknown'}
+                            </Badge>
+                            <p className="text-xs text-muted-foreground">
+                              Threshold: {selectedTestRun.passThreshold ?? 70} pts
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  </div>
 
-              {selectedTestRun.moderatorModelId && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold">Moderator Model</h3>
-                  <Badge variant="outline">
-                    {models.find(m => m.id === selectedTestRun.moderatorModelId)?.name || 'Unknown'}
-                  </Badge>
-                </div>
-              )}
+                  {/* Model Performance Table */}
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold">Model Performance</h3>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => downloadJSON(selectedTestRun)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          JSON
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => downloadCSV(selectedTestRun)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          CSV
+                        </Button>
+                      </div>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Model</TableHead>
+                          <TableHead className="text-right">Accuracy</TableHead>
+                          <TableHead className="text-right">Passed</TableHead>
+                          <TableHead className="text-right">Failed</TableHead>
+                          <TableHead className="text-right">Errors</TableHead>
+                          <TableHead className="text-right">Avg Response Time</TableHead>
+                          {selectedTestRun.moderatorModelId && (
+                            <TableHead className="text-right">Avg Score</TableHead>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {calculateModelStats(selectedTestRun).map((stats) => {
+                          const modelResults = selectedTestRun.results.filter(r => r.modelId === stats.modelId)
+                          const scoresWithValues = modelResults
+                            .map(r => r.moderatorScore)
+                            .filter((score): score is number => score !== undefined)
+                          const avgModeratorScore = scoresWithValues.length > 0
+                            ? scoresWithValues.reduce((sum, score) => sum + score, 0) / scoresWithValues.length
+                            : null
 
-              {selectedTestRun.status === 'completed' && (
-                <div className="pt-4 flex gap-2">
-                  <Button onClick={() => router.push(`/results/${selectedTestRun.id}`)}>
-                    View Results
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => handleReRun(selectedTestRun)}
-                    disabled={!!runningTest}
-                  >
-                    <RotateCw className="h-4 w-4 mr-2" />
-                    Re-run Test
-                  </Button>
-                </div>
+                          return (
+                            <TableRow key={stats.modelId}>
+                              <TableCell className="font-medium">{stats.modelName}</TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant={stats.accuracy >= 80 ? 'default' : 'secondary'}>
+                                  {stats.accuracy.toFixed(1)}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right text-green-600">
+                                {stats.passed}
+                              </TableCell>
+                              <TableCell className="text-right text-red-600">
+                                {stats.failed}
+                              </TableCell>
+                              <TableCell className="text-right text-orange-600">
+                                {stats.errors}
+                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground">
+                                {stats.avgResponseTime.toFixed(0)}ms
+                              </TableCell>
+                              {selectedTestRun.moderatorModelId && (
+                                <TableCell className="text-right">
+                                  {avgModeratorScore !== null ? (
+                                    <Badge variant={avgModeratorScore >= 70 ? 'default' : avgModeratorScore >= 40 ? 'secondary' : 'destructive'}>
+                                      {avgModeratorScore.toFixed(1)}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">N/A</span>
+                                  )}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </Card>
+
+                  {/* Action Buttons */}
+                  <div className="flex justify-center gap-3">
+                    <Button onClick={() => router.push(`/results/${selectedTestRun.id}?from=test-runs&selected=${selectedTestRun.id}`)} size="lg">
+                      View Detailed Results
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="lg"
+                      onClick={() => handleReRun(selectedTestRun)}
+                      disabled={!!runningTest}
+                    >
+                      <RotateCw className="h-4 w-4 mr-2" />
+                      Re-run Test
+                    </Button>
+                  </div>
+                </>
               )}
-            </Card>
+            </div>
           ) : (
             <Card className="p-12 text-center border-dashed">
               <p className="text-muted-foreground">Select a test run to view details</p>
