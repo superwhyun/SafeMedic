@@ -176,7 +176,7 @@ function parseModeratorResponse(response: string): ModeratorEvaluation {
 
 async function callOpenAI(model: LLMModel, input: string, systemPrompt?: string): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout
+  const timeoutId = setTimeout(() => controller.abort('Request timeout (60s)'), 60000)
 
   try {
     const messages: any[] = []
@@ -244,7 +244,7 @@ async function callOpenAI(model: LLMModel, input: string, systemPrompt?: string)
     clearTimeout(timeoutId)
     console.error('[OpenAI] Exception:', error)
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`OpenAI API timeout (120s) - Model: ${model.modelId}`)
+      throw new Error(`OpenAI API timeout (60s) - Model: ${model.modelId}`)
     }
     throw error
   }
@@ -252,7 +252,7 @@ async function callOpenAI(model: LLMModel, input: string, systemPrompt?: string)
 
 async function callAnthropic(model: LLMModel, input: string, systemPrompt?: string): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout
+  const timeoutId = setTimeout(() => controller.abort('Request timeout (60s)'), 60000)
 
   try {
     const requestBody: any = {
@@ -289,7 +289,7 @@ async function callAnthropic(model: LLMModel, input: string, systemPrompt?: stri
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Anthropic API timeout (120s) - Model: ${model.modelId}`)
+      throw new Error(`Anthropic API timeout (60s) - Model: ${model.modelId}`)
     }
     throw error
   }
@@ -297,7 +297,7 @@ async function callAnthropic(model: LLMModel, input: string, systemPrompt?: stri
 
 async function callGrok(model: LLMModel, input: string, systemPrompt?: string): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout
+  const timeoutId = setTimeout(() => controller.abort('Request timeout (60s)'), 60000)
 
   try {
     const messages: any[] = []
@@ -349,7 +349,7 @@ async function callGrok(model: LLMModel, input: string, systemPrompt?: string): 
     clearTimeout(timeoutId)
     console.error('[Grok] Exception:', error)
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Grok API timeout (120s) - Model: ${model.modelId}`)
+      throw new Error(`Grok API timeout (60s) - Model: ${model.modelId}`)
     }
     throw error
   }
@@ -357,7 +357,7 @@ async function callGrok(model: LLMModel, input: string, systemPrompt?: string): 
 
 async function callGoogle(model: LLMModel, input: string, systemPrompt?: string): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout
+  const timeoutId = setTimeout(() => controller.abort('Request timeout (60s)'), 60000)
 
   try {
     const requestBody: any = {
@@ -395,7 +395,7 @@ async function callGoogle(model: LLMModel, input: string, systemPrompt?: string)
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Google API timeout (120s) - Model: ${model.modelId}`)
+      throw new Error(`Google API timeout (60s) - Model: ${model.modelId}`)
     }
     throw error
   }
@@ -424,7 +424,7 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
 
   // Create AbortController for timeout
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout
+  const timeoutId = setTimeout(() => controller.abort('Request timeout (60s)'), 60000)
 
   try {
     const response = await fetch(model.endpoint, {
@@ -481,7 +481,7 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
     clearTimeout(timeoutId)
     console.error('[Custom API] Exception:', error)
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Custom API timeout (120s) - Endpoint: ${model.endpoint}, Model: ${model.modelId}`)
+      throw new Error(`Custom API timeout (60s) - Endpoint: ${model.endpoint}, Model: ${model.modelId}`)
     }
     throw error
   }
