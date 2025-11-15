@@ -1,0 +1,847 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Progress } from '@/components/ui/progress'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Slider } from '@/components/ui/slider'
+import { Play, Trash2, RotateCw } from 'lucide-react'
+import { TestRun, TestResult, LLMModel, ChallengeSet, ChallengeSetSelection } from '@/lib/types'
+import { getTestRuns, saveTestRun, deleteTestRun, getModels, getChallengeSets } from '@/lib/storage'
+import { runTest, evaluateWithModerator } from '@/lib/llm-runner'
+import { useToast } from '@/hooks/use-toast'
+import { useRouter } from 'next/navigation'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+
+export default function TestRunsPage() {
+  const [testRuns, setTestRuns] = useState<TestRun[]>([])
+  const [selectedTestRun, setSelectedTestRun] = useState<TestRun | null>(null)
+  const [runningTest, setRunningTest] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  
+  // Form state for new test run
+  const [isCreatingNew, setIsCreatingNew] = useState(true)
+  const [name, setName] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('답변은 한글로 최대 500자 이내로 생성하라.')
+  const [moderatorSystemPrompt, setModeratorSystemPrompt] = useState('You are an expert evaluator for medical AI responses. Evaluate responses based on medical accuracy, safety, and clarity. 평가 사유는 한글로 작성하라.')
+  const [models, setModels] = useState<LLMModel[]>([])
+  const [challengeSets, setChallengeSets] = useState<ChallengeSet[]>([])
+  const [challengeSetSelections, setChallengeSetSelections] = useState<ChallengeSetSelection[]>([])
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
+  const [selectedModeratorId, setSelectedModeratorId] = useState<string>('')
+  const [passThreshold, setPassThreshold] = useState<number>(70)
+  const [delayBetweenCalls, setDelayBetweenCalls] = useState<number>(500)
+
+  const { toast } = useToast()
+  const router = useRouter()
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = () => {
+    const runs = getTestRuns().sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+    setTestRuns(runs)
+    setModels(getModels())
+    setChallengeSets(getChallengeSets())
+  }
+
+  const executeTestRun = async (testRun: TestRun) => {
+    // console.log('[Test Run] Starting test run:', testRun.name)
+    setRunningTest(testRun.id)
+    testRun.status = 'running'
+    saveTestRun(testRun)
+    loadData()
+
+    const testModels = getModels().filter(m => testRun.modelIds.includes(m.id))
+    // console.log('[Test Run] Models to test:', testModels.map(m => m.name))
+    
+    const allChallengeSets = getChallengeSets()
+    
+    // Collect all challenges from selected challenge sets
+    const allChallenges: { challenge: { input: string, expectedOutput: string }, setName: string }[] = []
+    
+    if (testRun.challengeSetSelections && testRun.challengeSetSelections.length > 0) {
+      // console.log('[Test Run] Using multiple challenge sets:', testRun.challengeSetSelections)
+      // New format: multiple challenge sets with counts
+      for (const selection of testRun.challengeSetSelections) {
+        const challengeSet = allChallengeSets.find(s => s.id === selection.challengeSetId)
+        if (challengeSet) {
+          let selectedChallenges: Challenge[]
+          
+          if (selection.selectionMode === 'random') {
+            // Random selection
+            const shuffled = [...challengeSet.challenges].sort(() => Math.random() - 0.5)
+            selectedChallenges = shuffled.slice(0, selection.count)
+          } else {
+            // Sequential selection (default)
+            selectedChallenges = challengeSet.challenges.slice(0, selection.count)
+          }
+          
+          selectedChallenges.forEach(challenge => {
+            allChallenges.push({ challenge, setName: challengeSet.name })
+          })
+        }
+      }
+    } else {
+      // Old format: single challenge set (backward compatibility)
+      const challengeSet = allChallengeSets.find(s => s.id === testRun.challengeSetId)
+      if (challengeSet) {
+        // console.log('[Test Run] Using single challenge set:', challengeSet.name)
+        challengeSet.challenges.forEach(challenge => {
+          allChallenges.push({ challenge, setName: challengeSet.name })
+        })
+      }
+    }
+    
+    // console.log(`[Test Run] Total challenges to test: ${allChallenges.length}`)
+
+    if (allChallenges.length === 0) {
+      testRun.status = 'failed'
+      saveTestRun(testRun)
+      setRunningTest(null)
+      toast({
+        title: 'Error',
+        description: 'No challenges found',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const results: TestResult[] = []
+    const totalTests = testModels.length * allChallenges.length
+    let completed = 0
+
+    const moderatorModel = testRun.moderatorModelId 
+      ? getModels().find(m => m.id === testRun.moderatorModelId)
+      : undefined
+
+    try {
+      for (const model of testModels) {
+        // console.log(`[Test Run] Testing model: ${model.name}`)
+        
+        for (const { challenge } of allChallenges) {
+          // console.log(`[Test Run] Running test ${completed + 1}/${totalTests}`)
+          
+          // Apply delay between API calls if specified
+          if (testRun.delayBetweenCalls && testRun.delayBetweenCalls > 0 && completed > 0) {
+            // console.log(`[Test Run] Waiting ${testRun.delayBetweenCalls}ms before next call...`)
+            await new Promise(resolve => setTimeout(resolve, testRun.delayBetweenCalls))
+          }
+          
+          const result = await runTest(model, challenge, testRun.systemPrompt)
+          // console.log(`[Test Run] Test result:`, {
+          //   hasError: !!result.error,
+          //   error: result.error,
+          //   hasOutput: !!result.actualOutput,
+          //   outputLength: result.actualOutput?.length,
+          //   isMatch: result.isMatch,
+          //   responseTime: result.responseTime
+          // })
+          
+          if (moderatorModel && !result.error && result.actualOutput) {
+            try {
+              const evaluation = await evaluateWithModerator(
+                moderatorModel,
+                challenge.input,
+                challenge.expectedOutput,
+                result.actualOutput,
+                testRun.moderatorSettings
+              )
+              
+              result.moderatorScore = evaluation.score
+              result.moderatorFeedback = evaluation.feedback
+              
+              // If moderator is used, determine pass/fail based on threshold
+              const threshold = testRun.passThreshold ?? 70
+              result.isMatch = evaluation.score >= threshold
+              
+              // console.log(`[Test Run] Moderator score: ${evaluation.score}, isMatch: ${result.isMatch}`)
+            } catch (evalError) {
+              // console.error('Moderator evaluation failed:', evalError)
+              const errorMessage = evalError instanceof Error ? evalError.message : 'Unknown error'
+              result.moderatorScore = 0
+              result.moderatorFeedback = `Evaluation failed: ${errorMessage}`
+              result.isMatch = false
+              
+              // Show toast notification for moderator errors
+              toast({
+                title: 'Moderator Evaluation Error',
+                description: errorMessage.slice(0, 100),
+                variant: 'destructive',
+              })
+            }
+          }
+          
+          results.push(result)
+          completed++
+
+          testRun.progress = (completed / totalTests) * 100
+          testRun.results = results
+          saveTestRun(testRun)
+          loadData()
+        }
+      }
+
+      testRun.status = 'completed'
+      testRun.completedAt = new Date().toISOString()
+      saveTestRun(testRun)
+      loadData()
+
+      // console.log('[Test Run] Test completed successfully')
+      toast({
+        title: 'Test Complete',
+        description: `Completed ${totalTests} tests across ${testModels.length} models`,
+      })
+
+      router.push(`/results/${testRun.id}`)
+    } catch (error) {
+      // console.error('[Test Run] Test execution failed:', error)
+      testRun.status = 'failed'
+      saveTestRun(testRun)
+      loadData()
+      toast({
+        title: 'Test Failed',
+        description: error instanceof Error ? error.message : 'An error occurred',
+        variant: 'destructive',
+      })
+    } finally {
+      setRunningTest(null)
+    }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Validation
+    if (!name) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter a test run name',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    if (challengeSetSelections.length === 0) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select at least one challenge set',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    if (selectedModelIds.length === 0) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select at least one model to test',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    if (!selectedModeratorId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a moderator model',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    if (!delayBetweenCalls || delayBetweenCalls < 0) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please set a valid delay between API calls',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const testRun: TestRun = {
+      id: crypto.randomUUID(),
+      name,
+      systemPrompt: systemPrompt || undefined,
+      challengeSetId: '', // deprecated but required for type
+      challengeSetName: '', // deprecated but required for type
+      challengeSetSelections: challengeSetSelections,
+      modelIds: selectedModelIds,
+      moderatorModelId: selectedModeratorId,
+      moderatorSettings: moderatorSystemPrompt ? {
+        promptTemplate: moderatorSystemPrompt,
+      } : undefined,
+      passThreshold: passThreshold,
+      delayBetweenCalls: delayBetweenCalls,
+      status: 'pending',
+      progress: 0,
+      results: [],
+      createdAt: new Date().toISOString(),
+    }
+
+    executeTestRun(testRun)
+    resetForm()
+  }
+
+  const resetForm = () => {
+    setName('')
+    setSystemPrompt('답변은 한글로 최대 500자 이내로 생성하라.')
+    setModeratorSystemPrompt('You are an expert evaluator for medical AI responses. Evaluate responses based on medical accuracy, safety, and clarity. 평가 사유는 한글로 작성하라.')
+    setChallengeSetSelections([])
+    setSelectedModelIds([])
+    setSelectedModeratorId('')
+    setPassThreshold(70)
+    setDelayBetweenCalls(500)
+  }
+
+  const toggleChallengeSet = (challengeSetId: string) => {
+    setChallengeSetSelections(prev => {
+      const existing = prev.find(s => s.challengeSetId === challengeSetId)
+      if (existing) {
+        // Remove it
+        return prev.filter(s => s.challengeSetId !== challengeSetId)
+      } else {
+        // Add it with default count
+        const challengeSet = challengeSets.find(s => s.id === challengeSetId)
+        if (!challengeSet) return prev
+        return [...prev, {
+          challengeSetId,
+          challengeSetName: challengeSet.name,
+          count: Math.min(10, challengeSet.challenges.length), // default to 10 or max available
+          selectionMode: 'sequential' as const
+        }]
+      }
+    })
+  }
+
+  const updateChallengeSetCount = (challengeSetId: string, count: number) => {
+    setChallengeSetSelections(prev => 
+      prev.map(s => 
+        s.challengeSetId === challengeSetId 
+          ? { ...s, count: Math.max(1, count) }
+          : s
+      )
+    )
+  }
+
+  const updateChallengeSetMode = (challengeSetId: string, mode: 'sequential' | 'random') => {
+    setChallengeSetSelections(prev => 
+      prev.map(s => 
+        s.challengeSetId === challengeSetId 
+          ? { ...s, selectionMode: mode }
+          : s
+      )
+    )
+  }
+
+  const getTotalChallengeCount = () => {
+    return challengeSetSelections.reduce((sum, selection) => sum + selection.count, 0)
+  }
+
+  const toggleModel = (modelId: string) => {
+    setSelectedModelIds(prev => {
+      const newIds = prev.includes(modelId)
+        ? prev.filter(id => id !== modelId)
+        : [...prev, modelId]
+      
+      if (!newIds.includes(modelId)) {
+        setModelOverrides(overrides => overrides.filter(o => o.modelId !== modelId))
+      }
+      
+      return newIds
+    })
+  }
+
+  const handleSelectTestRun = (testRun: TestRun) => {
+    setSelectedTestRun(testRun)
+    setIsCreatingNew(false)
+  }
+
+  const handleNewTestRun = () => {
+    setIsCreatingNew(true)
+    setSelectedTestRun(null)
+    resetForm()
+  }
+
+  const handleDelete = () => {
+    if (!deleteId) return
+    deleteTestRun(deleteId)
+    loadData()
+    if (selectedTestRun?.id === deleteId) {
+      setIsCreatingNew(true)
+      setSelectedTestRun(null)
+    }
+    setDeleteId(null)
+  }
+
+  const handleReRun = (testRun: TestRun) => {
+    console.log('[Test Run] Re-running test:', testRun.name)
+    
+    // Create a new test run with the same settings
+    const newTestRun: TestRun = {
+      id: crypto.randomUUID(),
+      name: `${testRun.name} (Re-run)`,
+      challengeSetId: testRun.challengeSetId,
+      challengeSetName: testRun.challengeSetName,
+      challengeSetSelections: testRun.challengeSetSelections,
+      systemPrompt: testRun.systemPrompt,
+      modelIds: testRun.modelIds,
+      moderatorModelId: testRun.moderatorModelId,
+      moderatorSettings: testRun.moderatorSettings,
+      passThreshold: testRun.passThreshold,
+      delayBetweenCalls: testRun.delayBetweenCalls,
+      status: 'pending',
+      progress: 0,
+      results: [],
+      createdAt: new Date().toISOString(),
+    }
+
+    executeTestRun(newTestRun)
+  }
+
+  const getStatusBadge = (status: TestRun['status']) => {
+    const variants = {
+      pending: 'secondary',
+      running: 'default',
+      completed: 'default',
+      failed: 'destructive',
+    } as const
+
+    return (
+      <Badge variant={variants[status]}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </Badge>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Test Runs</h1>
+          <p className="text-muted-foreground">Execute and monitor LLM testing</p>
+        </div>
+        {!isCreatingNew && (
+          <Button onClick={handleNewTestRun} disabled={!!runningTest}>
+            <Play className="h-4 w-4 mr-2" />
+            New Test Run
+          </Button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-12 gap-6">
+        {/* Left sidebar - Test Runs List */}
+        <div className="col-span-3 space-y-2">
+          <h2 className="text-lg font-semibold mb-4">Previous Test Runs</h2>
+          {testRuns.length === 0 ? (
+            <Card className="p-6 text-center border-dashed">
+              <p className="text-sm text-muted-foreground">No test runs yet</p>
+            </Card>
+          ) : (
+            testRuns.map((testRun) => (
+              <Card 
+                key={testRun.id} 
+                className={`p-4 cursor-pointer transition-colors hover:bg-muted/50 ${
+                  selectedTestRun?.id === testRun.id ? 'border-primary bg-muted' : ''
+                }`}
+                onClick={() => handleSelectTestRun(testRun)}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-sm line-clamp-2">{testRun.name}</h3>
+                    <div className="flex gap-1">
+                      {testRun.status === 'completed' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleReRun(testRun)
+                          }}
+                          disabled={!!runningTest}
+                          title="Re-run this test"
+                        >
+                          <RotateCw className="h-3 w-3" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteId(testRun.id)
+                        }}
+                        title="Delete this test"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  {getStatusBadge(testRun.status)}
+                  {testRun.status === 'running' && (
+                    <div className="space-y-1">
+                      <Progress value={testRun.progress} className="h-1" />
+                      <p className="text-xs text-muted-foreground">{Math.round(testRun.progress)}%</p>
+                    </div>
+                  )}
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    <p>{testRun.modelIds.length} model{testRun.modelIds.length > 1 ? 's' : ''}</p>
+                    {testRun.challengeSetSelections && testRun.challengeSetSelections.length > 0 && (
+                      <p>
+                        {testRun.challengeSetSelections.reduce((sum, s) => sum + s.count, 0)} challenges
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+
+        {/* Main content - New Test Run Form or Details */}
+        <div className="col-span-9">
+          {isCreatingNew ? (
+            <Card className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Create New Test Run</h2>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Test Run Name *</Label>
+                  <Input
+                    id="name"
+                    placeholder="Baseline comparison test"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="systemPrompt">System Prompt</Label>
+                  <textarea
+                    id="systemPrompt"
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Enter system prompt for all models (optional)"
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This prompt will be sent to all test models to guide their responses
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Challenge Sets *</Label>
+                  {challengeSets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No challenge sets configured. Add challenge sets first.</p>
+                  ) : (
+                    <div className="space-y-3 border rounded-lg p-4">
+                      {challengeSets.map((set) => {
+                        const selection = challengeSetSelections.find(s => s.challengeSetId === set.id)
+                        const isSelected = !!selection
+                        
+                        return (
+                          <div key={set.id} className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`set-${set.id}`}
+                                checked={isSelected}
+                                onCheckedChange={() => toggleChallengeSet(set.id)}
+                              />
+                              <label
+                                htmlFor={`set-${set.id}`}
+                                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                              >
+                                {set.name}
+                                <span className="text-muted-foreground ml-2">
+                                  ({set.challenges.length} available)
+                                </span>
+                              </label>
+                            </div>
+                            {isSelected && (
+                              <div className="ml-6 space-y-3">
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <Label htmlFor={`slider-${set.id}`} className="text-sm font-medium">
+                                      Selected: {selection.count} / {set.challenges.length} challenges
+                                    </Label>
+                                    <span className="text-xs text-muted-foreground">
+                                      {Math.round((selection.count / set.challenges.length) * 100)}%
+                                    </span>
+                                  </div>
+                                  <Slider
+                                    id={`slider-${set.id}`}
+                                    min={1}
+                                    max={set.challenges.length}
+                                    step={1}
+                                    value={[selection.count]}
+                                    onValueChange={(value) => updateChallengeSetCount(set.id, value[0])}
+                                    className="w-full"
+                                  />
+                                </div>
+                                <RadioGroup
+                                  value={selection.selectionMode || 'sequential'}
+                                  onValueChange={(value) => updateChallengeSetMode(set.id, value as 'sequential' | 'random')}
+                                  className="flex gap-4"
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="sequential" id={`sequential-${set.id}`} />
+                                    <Label htmlFor={`sequential-${set.id}`} className="text-xs font-normal cursor-pointer">
+                                      Sequential
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="random" id={`random-${set.id}`} />
+                                    <Label htmlFor={`random-${set.id}`} className="text-xs font-normal cursor-pointer">
+                                      Random
+                                    </Label>
+                                  </div>
+                                </RadioGroup>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {challengeSetSelections.length > 0 && (
+                        <div className="pt-2 border-t">
+                          <p className="text-sm font-medium">
+                            Total: {getTotalChallengeCount()} challenges selected
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Select Models to Test</Label>
+                  {models.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No models configured. Add models first.</p>
+                  ) : (
+                    <div className="space-y-2 border rounded-lg p-4">
+                      {models.map((model) => (
+                        <div key={model.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={model.id}
+                            checked={selectedModelIds.includes(model.id)}
+                            onCheckedChange={() => toggleModel(model.id)}
+                          />
+                          <label
+                            htmlFor={model.id}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                          >
+                            {model.name}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="delay">Delay Between API Calls *</Label>
+                    <span className="text-sm font-medium">
+                      {delayBetweenCalls} ms
+                    </span>
+                  </div>
+                  <Slider
+                    id="delay"
+                    min={0}
+                    max={1000}
+                    step={50}
+                    value={[delayBetweenCalls]}
+                    onValueChange={(value) => setDelayBetweenCalls(value[0])}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Delay between each API call to avoid rate limits (0-1000ms)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="moderator">Moderator Model *</Label>
+                  <Select value={selectedModeratorId} onValueChange={setSelectedModeratorId} required>
+                    <SelectTrigger id="moderator">
+                      <SelectValue placeholder="Select a moderator model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    This model will evaluate responses and provide scores (required)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="moderatorSystemPrompt">Moderator System Prompt</Label>
+                  <textarea
+                    id="moderatorSystemPrompt"
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Enter system prompt for the moderator model"
+                    value={moderatorSystemPrompt}
+                    onChange={(e) => setModeratorSystemPrompt(e.target.value)}
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Instructions for the moderator (e.g., evaluation criteria, language preference)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="passThreshold">Pass Threshold</Label>
+                    <span className="text-sm font-medium">
+                      {passThreshold} points
+                    </span>
+                  </div>
+                  <Slider
+                    id="passThreshold"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={[passThreshold]}
+                    onValueChange={(value) => setPassThreshold(value[0])}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Minimum moderator score to consider a response as "passed" (0-100)
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button 
+                    type="submit" 
+                    disabled={
+                      !name ||
+                      challengeSetSelections.length === 0 || 
+                      selectedModelIds.length === 0 || 
+                      !selectedModeratorId ||
+                      !!runningTest
+                    }
+                    size="lg"
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    Start Test Run
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          ) : selectedTestRun ? (
+            <Card className="p-6 space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">{selectedTestRun.name}</h2>
+                  {selectedTestRun.challengeSetSelections && selectedTestRun.challengeSetSelections.length > 0 ? (
+                    <div className="mt-2 space-y-1">
+                      {selectedTestRun.challengeSetSelections.map((selection) => (
+                        <p key={selection.challengeSetId} className="text-sm text-muted-foreground">
+                          {selection.challengeSetName}: {selection.count} challenges
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground mt-1">
+                      {selectedTestRun.challengeSetName}
+                    </p>
+                  )}
+                </div>
+                {getStatusBadge(selectedTestRun.status)}
+              </div>
+
+              {selectedTestRun.status === 'running' && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Progress</span>
+                    <span className="font-medium">{Math.round(selectedTestRun.progress)}%</span>
+                  </div>
+                  <Progress value={selectedTestRun.progress} />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold">Models Tested</h3>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTestRun.modelIds.map((modelId) => {
+                    const model = models.find(m => m.id === modelId)
+                    return model ? (
+                      <Badge key={modelId} variant="secondary">{model.name}</Badge>
+                    ) : null
+                  })}
+                </div>
+              </div>
+
+              {selectedTestRun.moderatorModelId && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Moderator Model</h3>
+                  <Badge variant="outline">
+                    {models.find(m => m.id === selectedTestRun.moderatorModelId)?.name || 'Unknown'}
+                  </Badge>
+                </div>
+              )}
+
+              {selectedTestRun.status === 'completed' && (
+                <div className="pt-4 flex gap-2">
+                  <Button onClick={() => router.push(`/results/${selectedTestRun.id}`)}>
+                    View Results
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => handleReRun(selectedTestRun)}
+                    disabled={!!runningTest}
+                  >
+                    <RotateCw className="h-4 w-4 mr-2" />
+                    Re-run Test
+                  </Button>
+                </div>
+              )}
+            </Card>
+          ) : (
+            <Card className="p-12 text-center border-dashed">
+              <p className="text-muted-foreground">Select a test run to view details</p>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Test Run</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this test run? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}
