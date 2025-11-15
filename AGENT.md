@@ -2,7 +2,7 @@
 
 이 문서는 SafeMedic 애플리케이션의 기능, 기술 스택, 아키텍처에 대한 명세입니다.
 
-**최종 업데이트**: 2025-11-16
+**최종 업데이트**: 2025-11-17
 
 ---
 
@@ -84,7 +84,18 @@
 - **컴포넌트**: `app/test-runs/page.tsx`
 - **레이아웃**:
   - 좌측 사이드바 (3칸): 과거 Test Run 목록
-  - 우측 메인 영역 (9칸): 새 Test Run 생성 폼 또는 선택된 Test Run 상세
+  - 우측 메인 영역 (9칸): 새 Test Run 생성 폼 또는 선택된 Test Run 상세/결과 요약
+- **URL 기반 상태 관리**:
+  - 선택된 Test Run을 URL 파라미터로 관리 (`?selected={id}`)
+  - Back 버튼으로 이전 화면 복귀 시 선택 상태 유지
+- **실시간 진행 상황 표시** (2025-11-17):
+  - 테스트 실행 중 0.5초마다 자동 새로고침
+  - 상세 진행 정보:
+    - 현재 단계 (Querying Model / Evaluating Response / Waiting)
+    - 현재 테스트 번호 / 전체 테스트 수
+    - 현재 모델 및 챌린지 내용
+    - 예상 남은 시간 (분:초)
+  - 왼쪽 사이드바에 간단한 진행 상황 표시
 - **Test Run 생성 폼**:
   - **Test Run 이름** *: 테스트 실행 이름 입력 (필수)
   - **System Prompt**: 테스트 대상 모델에 전달할 시스템 프롬프트
@@ -117,13 +128,19 @@
   - **Delete**: Test Run 삭제
   - **실시간 진행률**: Progress 바 및 퍼센트 표시
   - **유효성 검사**: 필수 항목 미입력 시 Toast 알림
+  - **테스트 완료 후**: Test Runs 페이지에 머물며 결과 요약 표시 (2025-11-17)
+    - Summary Cards: Total Tests, Models Tested, Best Accuracy
+    - Model Performance 테이블
+    - JSON/CSV 다운로드 버튼
+    - "View Detailed Results" 버튼으로 상세 페이지 이동
 - **실행 프로세스**:
   1. 선택된 Challenge Set들에서 지정된 개수만큼 챌린지 수집 (Sequential/Random)
   2. 각 API 호출 사이에 지정된 delay 적용
   3. 선택된 모델들이 각 Challenge에 대해 응답 생성
   4. Moderator 모델이 각 응답 평가 (0-100점)
-  5. 실시간 진행률 표시 및 LocalStorage에 저장
-  6. 완료 시 결과 페이지로 이동
+  5. 실시간 진행률 및 상세 정보 표시
+  6. LocalStorage에 저장
+  7. 완료 시 Test Runs 페이지에 머물며 결과 요약 표시
 - **LLM Runner (`lib/llm-runner.ts`)**:
   - `runTest()`: 모델 응답 생성 (system prompt 지원)
   - `evaluateWithModerator()`: Moderator 평가 실행 (system/user prompt 분리)
@@ -131,6 +148,7 @@
   - OpenAI, Anthropic, Google, Grok, Custom API 지원
   - 에러 발생 시에도 테스트 계속 진행
   - Temperature/Max Tokens 파라미터 제거 (API 기본값 사용)
+  - 성능 개선: 디버그 로그 최소화 (2025-11-17)
 
 ### 2.4. Moderator AI 평가 시스템
 
@@ -168,24 +186,24 @@
 
 - **컴포넌트**: `app/results/[id]/page.tsx`
 - **헤더**:
-  - Test Run 이름 및 Pass Threshold 표시
-- **Overview 탭**:
-  - 총 테스트 수, 테스트된 모델 수, 최고 정확도
-  - 모델 성능 테이블:
-    - 모델명, 정확도, **Passed/Failed/Errors** 분리 표시, 평균 응답 시간
-    - Moderator 사용 시 평균 Moderator 점수 표시
-    - **Passed**: Moderator score >= Pass Threshold
-    - **Failed**: Moderator score < Pass Threshold
-    - **Errors**: API timeout, parsing error 등
-- **Detailed Results 탭**:
+  - Test Run 이름
+  - Back 버튼: URL 파라미터 기반으로 이전 화면(Test Runs 페이지 요약)으로 복귀
+- **모델별 상세 결과** (2025-11-17 UI 개선):
   - **모델별 그룹화**: 각 모델마다 별도 카드로 표시
-  - **접기/펼기기 기능**: 세모 화살표 클릭으로 토글
+  - **접기/펼치기 기능**: 세모 화살표 클릭으로 토글
   - 모델별 헤더: 정확도, Passed/Failed/Errors 개수 표시
-  - 각 테스트의 상세 결과:
-    - Challenge Input, Expected Output, Actual Output
-    - Moderator Score 및 Feedback (있는 경우)
-    - 응답 시간 표시
+  - **각 테스트 카드 디자인**:
+    - 왼쪽 색상 보더 (Pass: 초록, Fail: 빨강)
+    - 큰 Test 번호 배지 (3xl, 그라데이션 배경, -6도 회전)
+    - PASSED/FAILED 라벨
+    - 응답 시간 및 Moderator 점수 표시
+    - 섹션별 색상 구분:
+      - Expected Answer: 파란색 배경
+      - Model Response: 초록/빨강/오렌지 배경
+      - Moderator Evaluation: 보라색 배경
+    - 가독성 개선: 충분한 패딩, 큰 폰트, 줄간격
 - **데이터 다운로드**:
+  - Test Runs 페이지에서 제공 (결과 요약 화면)
   - **JSON**: 전체 TestRun 객체 다운로드
   - **CSV**: 스프레드시트 호환 형식
     - 컬럼: Model Name, Challenge Input, Expected Output, Actual Output, Is Match, Response Time, Moderator Score, Moderator Feedback, Error
@@ -236,6 +254,16 @@ interface Challenge {
   expectedOutput: string
 }
 
+// 진행 상황 정보
+interface TestRunProgressInfo {
+  currentStep: 'idle' | 'querying' | 'evaluating' | 'waiting'
+  currentModel?: string
+  currentChallenge?: string
+  currentTestNumber?: number
+  totalTests?: number
+  estimatedTimeRemaining?: number
+}
+
 // Test Run
 interface TestRun {
   id: string
@@ -251,6 +279,7 @@ interface TestRun {
   delayBetweenCalls?: number // API 호출 간격 (ms, 기본: 500)
   status: 'pending' | 'running' | 'completed' | 'failed'
   progress: number
+  progressInfo?: TestRunProgressInfo // 실시간 진행 상황
   results: TestResult[]
   createdAt: string
   completedAt?: string
@@ -301,11 +330,16 @@ interface TestResult {
    - 평가 피드백 생성 (기본값: 한글)
    - Pass Threshold 기반 Pass/Fail 판정
 
-5. **결과 분석 및 다운로드**
-   - Passed/Failed/Errors 분리 표시
-   - 모델별 그룹화 및 접기/펼치기 UI
-   - 모델 성능 비교 테이블
-   - JSON/CSV 다운로드
+5. **결과 분석 및 다운로드** (2025-11-17 개선)
+   - **Test Runs 페이지에서 결과 요약 바로 표시**
+     - Summary Cards (Total Tests, Models Tested, Best Accuracy)
+     - Model Performance 테이블
+     - JSON/CSV 다운로드 버튼
+   - **Detailed Results 페이지**
+     - 모델별 그룹화 및 접기/펼치기 UI
+     - 개선된 카드 디자인 (색상 구분, 큰 Test 번호)
+     - 섹션별 색상 및 가독성 향상
+   - **URL 기반 네비게이션**: Back 버튼으로 이전 화면 복귀
 
 ### 🚧 향후 개선 사항
 

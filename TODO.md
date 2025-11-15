@@ -1,6 +1,6 @@
 # TODO
 
-**최종 업데이트**: 2025-11-16
+**최종 업데이트**: 2025-11-17
 
 ---
 
@@ -79,10 +79,14 @@
   - [x] 기존 설정 복사하여 새 Test Run 생성
   - [x] 사이드바 및 상세 뷰에 Re-run 버튼
 
-- [x] **진행상황 표시**
+- [x] **진행상황 표시** (2025-11-17 대폭 개선)
   - [x] 실시간 Progress 바 (좌측 사이드바)
-  - [x] 퍼센트 표시
-  - [x] 우측 상세 뷰에도 Progress 표시
+  - [x] 퍼센트 및 테스트 번호 표시 (5/30 형식)
+  - [x] 우측 상세 뷰 진행 정보 패널
+    - [x] 현재 단계 (Querying Model / Evaluating Response / Waiting)
+    - [x] 현재 모델 및 챌린지 내용
+    - [x] 예상 남은 시간 (분:초)
+  - [x] 0.5초마다 자동 새로고침
 
 - [x] **유효성 검사**
   - [x] Test Run 이름 필수
@@ -98,30 +102,37 @@
   - [x] NaN 처리 강화
 
 ### 4. 결과 표시 및 다운로드 (`/results/[id]`)
-- [x] **헤더** (2025-11-16)
-  - [x] Pass Threshold 정보 표시
+- [x] **Test Runs 페이지에서 결과 요약** (2025-11-17)
+  - [x] 테스트 완료 시 Test Runs 페이지에 머물며 결과 표시
+  - [x] Summary Cards 통합 디자인
+    - [x] Total Tests + Status + Challenge Sets 정보
+    - [x] Models Tested + 모델 badges
+    - [x] Best Accuracy + Moderator 정보
+  - [x] Model Performance 테이블
+  - [x] JSON/CSV 다운로드 버튼
+  - [x] "View Detailed Results" 버튼
 
-- [x] **Overview 탭**
-  - [x] Passed/Failed/Errors 분리 표시 (2025-11-16)
-    - Passed: score >= Pass Threshold
-    - Failed: score < Pass Threshold
-    - Errors: API timeout, parsing error 등
-  - [x] 모델 성능 테이블 (정확도, Passed/Failed/Errors, 응답 시간)
-  - [x] Moderator 평균 점수 표시 (Moderator 사용 시)
-  - [x] 점수에 따른 Badge 색상 구분
+- [x] **URL 기반 네비게이션** (2025-11-17)
+  - [x] 선택된 Test Run을 URL 파라미터로 관리
+  - [x] Back 버튼으로 이전 화면 복귀
+  - [x] Deep link 지원
 
-- [x] **Detailed Results 탭** (2025-11-16)
-  - [x] 모델별 그룹화 및 카드 분리
-  - [x] 접기/펼치기 UI (세모 화살표)
-  - [x] 모델별 헤더에 Passed/Failed/Errors 개수 표시
-  - [x] 각 테스트의 상세 결과
-  - [x] Moderator Score 및 Feedback 표시
-  - [x] 응답 시간 표시
+- [x] **Detailed Results 페이지** (2025-11-17 UI 대폭 개선)
+  - [x] 모델별 그룹화 및 접기/펼치기 UI
+  - [x] 각 테스트 카드 디자인 개선
+    - [x] 왼쪽 색상 보더 (Pass: 초록, Fail: 빨강)
+    - [x] 큰 Test 번호 (3xl, 그라데이션 배경, -6도 회전)
+    - [x] PASSED/FAILED 명확한 라벨
+    - [x] 섹션별 색상 구분 (Expected/Response/Evaluation)
+    - [x] 가독성 개선 (큰 폰트, 충분한 패딩, 줄간격)
+  - [x] Moderator 피드백 텍스트 크기 증가
+  - [x] 다크모드 지원
 
 - [x] **데이터 다운로드**
   - [x] JSON 다운로드 버튼 및 로직
   - [x] CSV 다운로드 버튼 및 로직
   - [x] 자동 파일명 생성 (테스트명_날짜)
+  - [x] Test Runs 페이지로 이동
 
 ---
 
@@ -202,12 +213,28 @@
 ### 알려진 이슈
 - 없음
 
-### 최근 개선 사항 (2025-11-15)
+### 최근 개선 사항 (2025-11-17)
+- [x] **실시간 진행 상황 추적**
+  - [x] 현재 단계, 모델, 챌린지 표시
+  - [x] 예상 남은 시간 계산
+  - [x] 0.5초마다 자동 새로고침
+- [x] **Test Runs UX 개선**
+  - [x] 테스트 완료 시 결과 요약 바로 표시
+  - [x] 통합된 Summary Cards 디자인
+  - [x] URL 기반 네비게이션
+- [x] **Detailed Results 디자인 개선**
+  - [x] 큰 Test 번호 배지 (회전 효과)
+  - [x] 섹션별 색상 구분
+  - [x] 가독성 대폭 향상
+  - [x] 모던하고 전문적인 느낌
+- [x] **성능 개선**
+  - [x] 불필요한 console.log 제거
+
+### 이전 개선 사항 (2025-11-16)
 - [x] Test Runs 페이지 전면 개편 (Dialog → 전체 화면 레이아웃)
 - [x] Challenge Set 다중 선택 및 Sequential/Random 선택 방식
 - [x] API Rate Limit 자동 재시도 로직 (Exponential backoff)
 - [x] 의료 AI 안전성 테스트 셋 추가 (`/data/safemedic.csv`)
-- [x] 디버그 로그 주석처리 (성능 개선)
 
 ---
 

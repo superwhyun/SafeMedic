@@ -168,54 +168,108 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <div className="space-y-4 max-h-[600px] overflow-auto pt-6">
+                    <div className="space-y-6 max-h-[600px] overflow-auto pt-6 px-2">
                       {modelResults.map((result, index) => (
-                    <div key={index} className="border rounded-lg p-4 space-y-3">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
-                            {result.isMatch ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-red-500" />
+                    <Card key={index} className={`relative overflow-hidden ${
+                      result.isMatch 
+                        ? 'border-l-4 border-l-green-500 shadow-sm' 
+                        : 'border-l-4 border-l-red-500 shadow-sm'
+                    }`}>
+                      <div className="p-6 space-y-4">
+                        {/* Header */}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-3 flex-1">
+                            <div className="flex items-center gap-4">
+                              <div className="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 px-4 py-2 rounded-lg shadow-sm -rotate-6">
+                                <span className="font-mono text-3xl font-bold bg-gradient-to-r from-slate-700 to-slate-500 dark:from-slate-200 dark:to-slate-400 bg-clip-text text-transparent">
+                                  Test #{index + 1}
+                                </span>
+                              </div>
+                              {result.isMatch ? (
+                                <div className="flex items-center gap-1.5 text-green-600">
+                                  <CheckCircle2 className="h-5 w-5" />
+                                  <span className="text-base font-semibold">PASSED</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-red-600">
+                                  <XCircle className="h-5 w-5" />
+                                  <span className="text-base font-semibold">FAILED</span>
+                                </div>
+                              )}
+                            </div>
+                            <h4 className="text-base font-semibold leading-relaxed">
+                              {result.challengeInput}
+                            </h4>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                              <Clock className="h-3.5 w-3.5" />
+                              <span className="font-medium">{result.responseTime}ms</span>
+                            </div>
+                            {result.moderatorScore !== undefined && (
+                              <Badge 
+                                variant={result.moderatorScore >= 70 ? 'default' : result.moderatorScore >= 40 ? 'secondary' : 'destructive'}
+                                className="text-sm px-3 py-1"
+                              >
+                                {result.moderatorScore}/100
+                              </Badge>
                             )}
-                            <p className="text-sm font-medium">{result.challengeInput}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {result.responseTime}ms
-                        </div>
-                      </div>
 
-                      <div className="grid gap-2 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Expected:</span>
-                          <p className="mt-1 p-2 bg-muted/50 rounded">{result.expectedOutput}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Actual:</span>
-                          <p className={`mt-1 p-2 rounded ${result.isMatch ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                            {result.actualOutput || result.error || 'No response'}
-                          </p>
-                        </div>
-                        {result.moderatorScore !== undefined && (
-                          <div className="border-t pt-2 mt-2">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-muted-foreground font-medium">Moderator Evaluation:</span>
-                              <Badge variant={result.moderatorScore >= 70 ? 'default' : result.moderatorScore >= 40 ? 'secondary' : 'destructive'}>
-                                Score: {result.moderatorScore}/100
-                              </Badge>
+                        {/* Expected vs Actual */}
+                        <div className="grid gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1 w-1 rounded-full bg-blue-500" />
+                              <h5 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                                Expected Answer
+                              </h5>
                             </div>
-                            {result.moderatorFeedback && (
-                              <p className="mt-1 p-2 bg-blue-500/10 rounded text-xs">
+                            <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg">
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap">{result.expectedOutput}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <div className={`h-1 w-1 rounded-full ${result.isMatch ? 'bg-green-500' : 'bg-red-500'}`} />
+                              <h5 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                                Model Response
+                              </h5>
+                            </div>
+                            <div className={`p-4 border rounded-lg ${
+                              result.error 
+                                ? 'bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-900'
+                                : result.isMatch 
+                                  ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900' 
+                                  : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900'
+                            }`}>
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                {result.actualOutput || result.error || 'No response'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Moderator Evaluation */}
+                        {result.moderatorScore !== undefined && result.moderatorFeedback && (
+                          <div className="space-y-2 pt-4 border-t">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1 w-1 rounded-full bg-purple-500" />
+                              <h5 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                                Moderator Evaluation
+                              </h5>
+                            </div>
+                            <div className="p-4 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 rounded-lg">
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap">
                                 {result.moderatorFeedback}
                               </p>
-                            )}
+                            </div>
                           </div>
                         )}
                       </div>
-                    </div>
+                    </Card>
                       ))}
                     </div>
                   </CollapsibleContent>
