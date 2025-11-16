@@ -427,6 +427,8 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
   const timeoutId = setTimeout(() => controller.abort('Request timeout (60s)'), 60000)
 
   try {
+    console.log(`[Custom API] Calling endpoint: ${model.endpoint}`)
+    
     const response = await fetch(model.endpoint, {
       method: 'POST',
       headers: {
@@ -439,7 +441,7 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
 
     clearTimeout(timeoutId)
 
-    // console.log('[Custom API] Response status:', response.status, response.statusText)
+    console.log('[Custom API] Response status:', response.status, response.statusText)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -457,16 +459,16 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
     }
 
     const responseText = await response.text()
-    // console.log('[Custom API] Response text (first 500 chars):', responseText.slice(0, 500))
+    console.log('[Custom API] Response received, length:', responseText.length)
     
     const data = JSON.parse(responseText)
-    // console.log('[Custom API] Parsed data structure:', {
-    //   hasChoices: !!data.choices,
-    //   choicesLength: data.choices?.length,
-    //   hasMessage: !!data.choices?.[0]?.message,
-    //   hasContent: !!data.choices?.[0]?.message?.content,
-    //   contentLength: data.choices?.[0]?.message?.content?.length
-    // })
+    console.log('[Custom API] Parsed data structure:', {
+      hasChoices: !!data.choices,
+      choicesLength: data.choices?.length,
+      hasMessage: !!data.choices?.[0]?.message,
+      hasContent: !!data.choices?.[0]?.message?.content,
+      contentLength: data.choices?.[0]?.message?.content?.length
+    })
     
     const content = data.choices?.[0]?.message?.content || data.response || ''
     
@@ -475,14 +477,27 @@ async function callCustom(model: LLMModel, input: string, systemPrompt?: string)
       throw new Error('No content in API response')
     }
     
-    // console.log('[Custom API] Successfully extracted content, length:', content.length)
+    console.log('[Custom API] Successfully extracted content, length:', content.length)
     return content
   } catch (error) {
     clearTimeout(timeoutId)
     console.error('[Custom API] Exception:', error)
+    
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(`Custom API timeout (60s) - Endpoint: ${model.endpoint}, Model: ${model.modelId}`)
     }
+    
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      throw new Error(
+        `Network error: Failed to connect to ${model.endpoint}. ` +
+        `Please check:\n` +
+        `1. Is the endpoint URL correct?\n` +
+        `2. Is the server running and accessible?\n` +
+        `3. CORS headers configured on the server?\n` +
+        `4. Firewall or network blocking the request?`
+      )
+    }
+    
     throw error
   }
 }
