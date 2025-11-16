@@ -718,14 +718,15 @@ export default function TestRunsPage() {
                             <>
                               {/* Model Results */}
                               {stats && stats.length > 0 && (
-                                <div className="space-y-1.5">
+                                <div className="space-y-1 pt-1 border-t">
+                                  <div className="text-xs font-semibold text-muted-foreground">Models</div>
                                   {stats.map((modelStat) => {
                                     const model = models.find(m => m.id === modelStat.modelId)
                                     return (
-                                      <div key={modelStat.modelId} className="space-y-0.5">
-                                        <div className="text-xs font-medium text-muted-foreground">
-                                          {model?.name || 'Unknown'}
-                                        </div>
+                                      <div key={modelStat.modelId} className="flex items-center gap-1.5">
+                                        <span className="text-xs text-muted-foreground min-w-[60px] truncate">
+                                          {model?.name || 'Unknown'}:
+                                        </span>
                                         <div className="flex gap-1">
                                           <Badge variant="default" className="bg-green-600 text-xs px-1.5 py-0">
                                             ✓ {modelStat.passed}
@@ -751,22 +752,27 @@ export default function TestRunsPage() {
 
                           {/* Challenge Sets */}
                           {testRun.challengeSetSelections && testRun.challengeSetSelections.length > 0 && (
-                            <div className="text-xs text-muted-foreground space-y-0.5">
-                              {testRun.challengeSetSelections.map((selection) => (
-                                <p key={selection.challengeSetId}>
-                                  {selection.challengeSetName} ({selection.count})
-                                </p>
-                              ))}
+                            <div className="pt-1 border-t">
+                              <div className="text-xs font-semibold text-muted-foreground mb-0.5">Challenge Sets</div>
+                              <div className="text-xs text-muted-foreground space-y-0.5">
+                                {testRun.challengeSetSelections.map((selection) => (
+                                  <p key={selection.challengeSetId}>
+                                    • {selection.challengeSetName} ({selection.count})
+                                  </p>
+                                ))}
+                              </div>
                             </div>
                           )}
 
                           {/* Moderator */}
                           {testRun.moderatorModelId && (
-                            <div className="text-xs flex items-center gap-1">
-                              <span className="text-muted-foreground">Mod:</span>
-                              <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                                {models.find(m => m.id === testRun.moderatorModelId)?.name || 'Unknown'}
-                              </Badge>
+                            <div className="pt-1 border-t">
+                              <div className="text-xs flex items-center gap-1">
+                                <span className="font-semibold text-muted-foreground">Moderator:</span>
+                                <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                                  {models.find(m => m.id === testRun.moderatorModelId)?.name || 'Unknown'}
+                                </Badge>
+                              </div>
                             </div>
                           )}
                         </div>
