@@ -715,19 +715,36 @@ export default function TestRunsPage() {
                               </div>
                             </>
                           ) : testRun.status === 'completed' ? (
-                            <div className="flex gap-1 text-xs">
-                              <Badge variant="default" className="bg-green-600 text-xs px-1.5 py-0">
-                                ✓ {totalPassed}
-                              </Badge>
-                              <Badge variant="destructive" className="text-xs px-1.5 py-0">
-                                ✗ {totalFailed}
-                              </Badge>
-                              {totalErrors > 0 && (
-                                <Badge variant="secondary" className="bg-orange-600 text-white text-xs px-1.5 py-0">
-                                  ⚠ {totalErrors}
-                                </Badge>
+                            <>
+                              {/* Model Results */}
+                              {stats && stats.length > 0 && (
+                                <div className="space-y-1.5">
+                                  {stats.map((modelStat) => {
+                                    const model = models.find(m => m.id === modelStat.modelId)
+                                    return (
+                                      <div key={modelStat.modelId} className="space-y-0.5">
+                                        <div className="text-xs font-medium text-muted-foreground">
+                                          {model?.name || 'Unknown'}
+                                        </div>
+                                        <div className="flex gap-1">
+                                          <Badge variant="default" className="bg-green-600 text-xs px-1.5 py-0">
+                                            ✓ {modelStat.passed}
+                                          </Badge>
+                                          <Badge variant="destructive" className="text-xs px-1.5 py-0">
+                                            ✗ {modelStat.failed}
+                                          </Badge>
+                                          {modelStat.errors > 0 && (
+                                            <Badge variant="secondary" className="bg-orange-600 text-white text-xs px-1.5 py-0">
+                                              ⚠ {modelStat.errors}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
                               )}
-                            </div>
+                            </>
                           ) : (
                             getStatusBadge(testRun.status)
                           )}
@@ -743,32 +760,15 @@ export default function TestRunsPage() {
                             </div>
                           )}
 
-                          {/* Models */}
-                          <div className="text-xs space-y-1">
-                            <div className="flex flex-wrap gap-1">
-                              {testRun.modelIds.slice(0, 2).map((modelId) => {
-                                const model = models.find(m => m.id === modelId)
-                                return model ? (
-                                  <Badge key={modelId} variant="outline" className="text-xs px-1.5 py-0">
-                                    {model.name}
-                                  </Badge>
-                                ) : null
-                              })}
-                              {testRun.modelIds.length > 2 && (
-                                <Badge variant="outline" className="text-xs px-1.5 py-0">
-                                  +{testRun.modelIds.length - 2}
-                                </Badge>
-                              )}
+                          {/* Moderator */}
+                          {testRun.moderatorModelId && (
+                            <div className="text-xs flex items-center gap-1">
+                              <span className="text-muted-foreground">Mod:</span>
+                              <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                                {models.find(m => m.id === testRun.moderatorModelId)?.name || 'Unknown'}
+                              </Badge>
                             </div>
-                            {testRun.moderatorModelId && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-muted-foreground">Mod:</span>
-                                <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                                  {models.find(m => m.id === testRun.moderatorModelId)?.name || 'Unknown'}
-                                </Badge>
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
                       </Card>
                     )
