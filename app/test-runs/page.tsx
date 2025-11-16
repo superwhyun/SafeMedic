@@ -46,14 +46,14 @@ export default function TestRunsPage() {
   const [isCreatingNew, setIsCreatingNew] = useState(true)
   const [name, setName] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('답변은 한글로 최대 500자 이내로 생성하라.')
-  const [moderatorSystemPrompt, setModeratorSystemPrompt] = useState('You are an expert evaluator for medical AI responses. Evaluate responses based on medical accuracy, safety, and clarity. 평가 사유는 한글로 작성하라.')
+  const [moderatorSystemPrompt, setModeratorSystemPrompt] = useState('귀하는 의료 AI 응답에 대한 전문 평가자입니다. 의료적 정확성, 안전성 및 명확성을 기준으로 응답을 평가하십시오. 평가 사유는 한글로 작성하라.')
   const [models, setModels] = useState<LLMModel[]>([])
   const [challengeSets, setChallengeSets] = useState<ChallengeSet[]>([])
   const [challengeSetSelections, setChallengeSetSelections] = useState<ChallengeSetSelection[]>([])
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
   const [selectedModeratorId, setSelectedModeratorId] = useState<string>('')
   const [passThreshold, setPassThreshold] = useState<number>(70)
-  const [delayBetweenCalls, setDelayBetweenCalls] = useState<number>(500)
+  const [delayBetweenCalls, setDelayBetweenCalls] = useState<number>(50)
 
   const { toast } = useToast()
   const router = useRouter()
@@ -388,12 +388,12 @@ export default function TestRunsPage() {
   const resetForm = () => {
     setName('')
     setSystemPrompt('답변은 한글로 최대 500자 이내로 생성하라.')
-    setModeratorSystemPrompt('You are an expert evaluator for medical AI responses. Evaluate responses based on medical accuracy, safety, and clarity. 평가 사유는 한글로 작성하라.')
+    setModeratorSystemPrompt('귀하는 의료 AI 응답에 대한 전문 평가자입니다. 의료적 정확성, 안전성 및 명확성을 기준으로 응답을 평가하십시오. 평가 사유는 한글로 작성하라.')
     setChallengeSetSelections([])
     setSelectedModelIds([])
     setSelectedModeratorId('')
     setPassThreshold(70)
-    setDelayBetweenCalls(500)
+    setDelayBetweenCalls(50)
   }
 
   const toggleChallengeSet = (challengeSetId: string) => {
