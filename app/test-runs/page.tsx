@@ -41,6 +41,8 @@ export default function TestRunsPage() {
   const [selectedTestRun, setSelectedTestRun] = useState<TestRun | null>(null)
   const [runningTest, setRunningTest] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 5
   
   // Form state for new test run
   const [isCreatingNew, setIsCreatingNew] = useState(true)
@@ -634,81 +636,170 @@ export default function TestRunsPage() {
 
       <div className="grid grid-cols-12 gap-6">
         {/* Left sidebar - Test Runs List */}
-        <div className="col-span-3 space-y-2">
-          <h2 className="text-lg font-semibold mb-4">Previous Test Runs</h2>
+        <div className="col-span-3 space-y-4">
+          <h2 className="text-lg font-semibold">Previous Test Runs</h2>
           {testRuns.length === 0 ? (
             <Card className="p-6 text-center border-dashed">
               <p className="text-sm text-muted-foreground">No test runs yet</p>
             </Card>
           ) : (
-            testRuns.map((testRun) => (
-              <Card 
-                key={testRun.id} 
-                className={`p-4 cursor-pointer transition-colors hover:bg-muted/50 ${
-                  selectedTestRun?.id === testRun.id ? 'border-primary bg-muted' : ''
-                }`}
-                onClick={() => handleSelectTestRun(testRun)}
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-sm line-clamp-2">{testRun.name}</h3>
-                    <div className="flex gap-1">
-                      {testRun.status === 'completed' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleReRun(testRun)
-                          }}
-                          disabled={!!runningTest}
-                          title="Re-run this test"
-                        >
-                          <RotateCw className="h-3 w-3" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteId(testRun.id)
-                        }}
-                        title="Delete this test"
+            <>
+              <div className="space-y-2">
+                {testRuns
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((testRun) => {
+                    const stats = testRun.status === 'completed' ? calculateModelStats(testRun) : null
+                    const totalPassed = stats?.reduce((sum, s) => sum + s.passed, 0) || 0
+                    const totalFailed = stats?.reduce((sum, s) => sum + s.failed, 0) || 0
+                    const totalErrors = stats?.reduce((sum, s) => sum + s.errors, 0) || 0
+                    
+                    return (
+                      <Card 
+                        key={testRun.id} 
+                        className={`p-3 cursor-pointer transition-colors hover:bg-muted/50 ${
+                          selectedTestRun?.id === testRun.id ? 'border-primary bg-muted' : ''
+                        }`}
+                        onClick={() => handleSelectTestRun(testRun)}
                       >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                  {getStatusBadge(testRun.status)}
-                  {testRun.status === 'running' && (
-                    <div className="space-y-1">
-                      <Progress value={testRun.progress} className="h-1" />
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground">
-                          {testRun.progressInfo?.currentTestNumber && testRun.progressInfo?.totalTests
-                            ? `${testRun.progressInfo.currentTestNumber}/${testRun.progressInfo.totalTests}`
-                            : `${Math.round(testRun.progress)}%`}
-                        </p>
-                        {testRun.progressInfo?.currentStep && (
-                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  <div className="text-xs text-muted-foreground space-y-0.5">
-                    <p>{testRun.modelIds.length} model{testRun.modelIds.length > 1 ? 's' : ''}</p>
-                    {testRun.challengeSetSelections && testRun.challengeSetSelections.length > 0 && (
-                      <p>
-                        {testRun.challengeSetSelections.reduce((sum, s) => sum + s.count, 0)} challenges
-                      </p>
-                    )}
-                  </div>
+                        <div className="space-y-2">
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-semibold text-sm line-clamp-2">{testRun.name}</h3>
+                            <div className="flex gap-1">
+                              {testRun.status === 'completed' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 w-5 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleReRun(testRun)
+                                  }}
+                                  disabled={!!runningTest}
+                                  title="Re-run this test"
+                                >
+                                  <RotateCw className="h-3 w-3" />
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setDeleteId(testRun.id)
+                                }}
+                                title="Delete this test"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Status */}
+                          {testRun.status === 'running' ? (
+                            <>
+                              {getStatusBadge(testRun.status)}
+                              <div className="space-y-1">
+                                <Progress value={testRun.progress} className="h-1" />
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-muted-foreground">
+                                    {testRun.progressInfo?.currentTestNumber && testRun.progressInfo?.totalTests
+                                      ? `${testRun.progressInfo.currentTestNumber}/${testRun.progressInfo.totalTests}`
+                                      : `${Math.round(testRun.progress)}%`}
+                                  </p>
+                                  {testRun.progressInfo?.currentStep && (
+                                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          ) : testRun.status === 'completed' ? (
+                            <div className="flex gap-1 text-xs">
+                              <Badge variant="default" className="bg-green-600 text-xs px-1.5 py-0">
+                                ✓ {totalPassed}
+                              </Badge>
+                              <Badge variant="destructive" className="text-xs px-1.5 py-0">
+                                ✗ {totalFailed}
+                              </Badge>
+                              {totalErrors > 0 && (
+                                <Badge variant="secondary" className="bg-orange-600 text-white text-xs px-1.5 py-0">
+                                  ⚠ {totalErrors}
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            getStatusBadge(testRun.status)
+                          )}
+
+                          {/* Challenge Sets */}
+                          {testRun.challengeSetSelections && testRun.challengeSetSelections.length > 0 && (
+                            <div className="text-xs text-muted-foreground space-y-0.5">
+                              {testRun.challengeSetSelections.map((selection) => (
+                                <p key={selection.challengeSetId}>
+                                  {selection.challengeSetName} ({selection.count})
+                                </p>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Models */}
+                          <div className="text-xs space-y-1">
+                            <div className="flex flex-wrap gap-1">
+                              {testRun.modelIds.slice(0, 2).map((modelId) => {
+                                const model = models.find(m => m.id === modelId)
+                                return model ? (
+                                  <Badge key={modelId} variant="outline" className="text-xs px-1.5 py-0">
+                                    {model.name}
+                                  </Badge>
+                                ) : null
+                              })}
+                              {testRun.modelIds.length > 2 && (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0">
+                                  +{testRun.modelIds.length - 2}
+                                </Badge>
+                              )}
+                            </div>
+                            {testRun.moderatorModelId && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-muted-foreground">Mod:</span>
+                                <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                                  {models.find(m => m.id === testRun.moderatorModelId)?.name || 'Unknown'}
+                                </Badge>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    )
+                  })}
+              </div>
+
+              {/* Pagination */}
+              {testRuns.length > itemsPerPage && (
+                <div className="flex items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {currentPage} / {Math.ceil(testRuns.length / itemsPerPage)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(testRuns.length / itemsPerPage), p + 1))}
+                    disabled={currentPage === Math.ceil(testRuns.length / itemsPerPage)}
+                  >
+                    Next
+                  </Button>
                 </div>
-              </Card>
-            ))
+              )}
+            </>
           )}
         </div>
 
