@@ -671,14 +671,14 @@ export default function TestRunsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-5 w-5 p-0"
+                                className="h-5 w-5 p-0 group"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleDelete(testRun.id)
                                 }}
                                 title="Delete this test"
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <Trash2 className="h-3 w-3 transition-transform duration-200 group-hover:scale-110 group-hover:-rotate-12" />
                               </Button>
                             </div>
                           </div>

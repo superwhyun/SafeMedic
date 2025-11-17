@@ -76,6 +76,44 @@ export function deleteTestRun(id: string): void {
   localStorage.setItem(STORAGE_KEYS.TEST_RUNS, JSON.stringify(runs))
 }
 
+// Export/Import all data
+export interface ExportData {
+  version: string
+  exportedAt: string
+  models: LLMModel[]
+  challengeSets: ChallengeSet[]
+  testRuns: TestRun[]
+}
+
+export function exportAllData(): ExportData {
+  return {
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    models: getModels(),
+    challengeSets: getChallengeSets(),
+    testRuns: getTestRuns(),
+  }
+}
+
+export function importAllData(data: ExportData): void {
+  if (!data.version || !data.models || !data.challengeSets || !data.testRuns) {
+    throw new Error('Invalid data format')
+  }
+  
+  // Clear existing data
+  localStorage.setItem(STORAGE_KEYS.MODELS, JSON.stringify(data.models))
+  localStorage.setItem(STORAGE_KEYS.CHALLENGE_SETS, JSON.stringify(data.challengeSets))
+  localStorage.setItem(STORAGE_KEYS.TEST_RUNS, JSON.stringify(data.testRuns))
+  localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true')
+}
+
+export function clearAllData(): void {
+  localStorage.removeItem(STORAGE_KEYS.MODELS)
+  localStorage.removeItem(STORAGE_KEYS.CHALLENGE_SETS)
+  localStorage.removeItem(STORAGE_KEYS.TEST_RUNS)
+  localStorage.removeItem(STORAGE_KEYS.INITIALIZED)
+}
+
 // Initialize with default challenge set
 export async function initializeDefaultData(): Promise<void> {
   if (typeof window === 'undefined') return
