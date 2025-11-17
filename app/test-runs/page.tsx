@@ -18,16 +18,6 @@ import { runTest, evaluateWithModerator } from '@/lib/llm-runner'
 import { useToast } from '@/hooks/use-toast'
 import { useRouter } from 'next/navigation'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import {
   Table,
   TableBody,
   TableCell,
@@ -40,7 +30,6 @@ export default function TestRunsPage() {
   const [testRuns, setTestRuns] = useState<TestRun[]>([])
   const [selectedTestRun, setSelectedTestRun] = useState<TestRun | null>(null)
   const [runningTest, setRunningTest] = useState<string | null>(null)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 5
   
@@ -471,15 +460,13 @@ export default function TestRunsPage() {
     router.push('/test-runs', { scroll: false })
   }
 
-  const handleDelete = () => {
-    if (!deleteId) return
-    deleteTestRun(deleteId)
+  const handleDelete = (id: string) => {
+    deleteTestRun(id)
     loadData()
-    if (selectedTestRun?.id === deleteId) {
+    if (selectedTestRun?.id === id) {
       setIsCreatingNew(true)
       setSelectedTestRun(null)
     }
-    setDeleteId(null)
   }
 
   const handleReRun = (testRun: TestRun) => {
@@ -687,7 +674,7 @@ export default function TestRunsPage() {
                                 className="h-5 w-5 p-0"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setDeleteId(testRun.id)
+                                  handleDelete(testRun.id)
                                 }}
                                 title="Delete this test"
                               >
@@ -1308,21 +1295,6 @@ export default function TestRunsPage() {
           )}
         </div>
       </div>
-
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Test Run</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this test run? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
